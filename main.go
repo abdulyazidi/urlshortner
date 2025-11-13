@@ -1,9 +1,9 @@
 package main
 
 import (
-	"context"
 	"database/sql"
 	"fmt"
+	"html/template"
 	"log"
 	"net/http"
 
@@ -14,47 +14,34 @@ import (
 )
 
 func main() {
-	fmt.Println("Hello, World!")
-	ctx := context.Background()
-
 	db, err := sql.Open("sqlite", "./db/urlshortner.db")
 	if err != nil {
 		log.Fatal("Error connecting to db", err)
 	}
 	queries := sqlc.New(db)
-
 	app := &App{queries: queries}
-
-	url := "https://google.com"
-	shortenedURL, err := gonanoid.New(8)
-
-	if err != nil {
-		log.Fatal("Couldn't generate a nanoid", err)
-	}
-
-	// insert shortened url
-	result, err := queries.CreateURL(ctx, sqlc.CreateURLParams{ID: shortenedURL, OriginalUrl: url})
-
-	if err != nil {
-		log.Fatal("Failed to insert new shortened url", err)
-	} else {
-		fmt.Println("CreateURL result: ", result)
-	}
-
-	// retrieve  original url
-	originalURL, err := queries.GetOriginalURL(ctx, result.ID)
-
-	if err != nil {
-		log.Println("Failed to query original url", err)
-	}
-
-	fmt.Printf("Shortened url: %v\nOriginal url: %v\n", shortenedURL, originalURL)
-
-	http.HandleFunc("/{$}", HomepageHandler)
+	app.InitTempl()
+	// Register handlers
+	http.HandleFunc("/{$}", app.HomepageHandler)
 	http.HandleFunc("/", app.RedirectToOriginalURLHandler)
-	http.HandleFunc("/shorten", app.ShortenURLHandler)
-	http.ListenAndServe(":8090", nil)
+	var port int = 8090
+	fmt.Printf("Running on port: %d\nhttp://localhost:%d", port, port)
+	http.ListenAndServe(fmt.Sprintf(":%d", port), nil)
 	fmt.Println("Exiting...")
+}
+
+type App struct {
+	queries *sqlc.Queries
+	tmpl    *template.Template
+}
+
+type PageData struct {
+	ShortenedURL string
+	Error        string
+}
+
+func (app *App) InitTempl() {
+	app.tmpl = template.Must(template.ParseFiles("./html/homepage.html"))
 }
 
 func (app *App) RedirectToOriginalURLHandler(w http.ResponseWriter, r *http.Request) {
@@ -72,23 +59,32 @@ func (app *App) RedirectToOriginalURLHandler(w http.ResponseWriter, r *http.Requ
 	http.Redirect(w, r, originalURL, http.StatusMovedPermanently)
 }
 
-func (app *App) ShortenURLHandler(w http.ResponseWriter, r *http.Request) {
-	if err := r.ParseForm(); err != nil {
-		http.Error(w, "Failed to parse form: "+err.Error(), http.StatusInternalServerError)
-	}
-	shortURL, err := gonanoid.New(8)
-	if err != nil {
-		fmt.Println("Error")
-	}
-	fmt.Println(shortURL)
-	fmt.Fprintf(w, "Method: %s\n", r.Method)
-}
+func (app *App) HomepageHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 
-func HomepageHandler(w http.ResponseWriter, r *http.Request) {
-	fmt.Println(r.URL.Path)
-	fmt.Fprintf(w, "Homepage\n")
-}
+	var data PageData
 
-type App struct {
-	queries *sqlc.Queries
+	// Handle POST (form submission)
+	if r.Method == http.MethodPost {
+		ctx := r.Context()
+
+		if err := r.ParseForm(); err != nil {
+			data.Error = "Failed to parse form: " + err.Error()
+		} else {
+			originalURL := r.FormValue("url")
+			shortURL, err := gonanoid.New(8)
+			if err != nil {
+				data.Error = "Failed to generate short URL: " + err.Error()
+			} else {
+				app.queries.CreateURL(ctx, sqlc.CreateURLParams{ID: shortURL, OriginalUrl: originalURL})
+				data.ShortenedURL = shortURL
+			}
+		}
+	}
+
+	// Render template (for both GET and POST)
+	if err := app.tmpl.Execute(w, data); err != nil {
+		http.Error(w, "Failed to render template", http.StatusInternalServerError)
+		log.Printf("Template execution error: %v\n", err)
+	}
 }

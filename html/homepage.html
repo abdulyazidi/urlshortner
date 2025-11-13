@@ -1,0 +1,34 @@
+<!-- html/homepage.html -->
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>URL Shortener</title>
+</head>
+
+<body>
+
+  <h1>Shorten your URL!</h1>
+
+  <form action="/" method="POST">
+    <label for="original_url">Original URL:</label><br>
+    <input type="url" id="original_url" name="url" placeholder="e.g., https://example.com" size="50" required><br><br>
+    <input type="submit" value="Shorten">
+  </form>
+
+  {{if .ShortenedURL}}
+  <h2>Your Shortened URL:</h2>
+  <p>
+    <a href="/{{.ShortenedURL}}" target="_blank" rel="noopener noreferrer">http://localhost:8090/{{.ShortenedURL}}</a>
+  </p>
+  {{end}}
+
+  {{if .Error}}
+  <p style="color: red;">Error: {{.Error}}</p>
+  {{end}}
+
+</body>
+
+</html>
